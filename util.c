@@ -37,7 +37,6 @@ int pwdPrint(MINODE *hold)
 
 	//Lets exit that...
 	//Helper function to print out the children.
-	printf("\ntemp->ino: %d\n", temp->ino);
 	childPrint(temp, hold->ino);
 	iput(temp);
 }
@@ -80,6 +79,49 @@ int childPrint (MINODE *temp, int ino)
 		}
 	}
 	return;
+}
+
+int decFreeBlocks(int dev)
+{
+  char buf[BLKSIZE];
+
+  // dec free inodes count in SUPER and GD
+  get_block(dev, 1, buf);
+  sp = (SUPER *)buf;
+  sp->s_free_blocks_count--;
+  put_block(dev, 1, buf);
+
+  get_block(dev, 2, buf);
+  gp = (GD *)buf;
+  gp->bg_free_blocks_count--;
+  put_block(dev, 2, buf);
+}
+
+int balloc(int dev)
+{
+  int i;
+  char buf[BLKSIZE];
+
+  // read inode_bitmap block
+  get_block(dev, bmap, buf);
+
+  for (i=0; i < nblocks; i++){
+    if (tst_bit(buf, i)==0){
+      set_bit(buf,i);
+      put_block(dev, bmap, buf);
+      decFreeBlocks(dev);
+
+      printf("Allocated:%d\n", i+1); 
+
+      return i+1;
+    }
+  }
+  printf("Balloc(): no more free inodes\n");
+  return 0;
+}
+
+int mymkdir(MINODE *pip, char *name)
+{
 
 }
 

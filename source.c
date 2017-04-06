@@ -139,6 +139,15 @@ int chdir()
 	}
 }
 
+/*
+	This function recursively prints the current working
+	directory. 
+	1. Checks for root, otherwise grab cwd
+	2. Enter print function, utilizing the parent ino in '..'
+	3. Checkout the MINODE of the parent. Make that our new CWD.
+	4. Recurse back in until done.
+	5. Then print the 'child' utilizing the childPrint helper.
+*/
 int pwd()
 {
 	MINODE *hold;
@@ -155,6 +164,47 @@ int pwd()
 	running->cwd = hold;
 	printf("\n");
 }
+
+/*
+	This function creates a new directory
+*/
+int make_dir()
+{
+	MINODE *mip, *pip;
+	char dirN[256], basN[256];
+	char *parent, *child;
+	if (pathname[0] == "/")
+	{
+		//Its absolute
+		mip = root;
+		dev = root->dev;
+	}
+	else
+	{
+		//Assume it's relative.
+		mip = running->cwd;
+		dev = running->cwd->dev;
+	}
+	//The function that destroys original copy.
+	//So make more copies...
+	//Also this may cause Seg Faults.. so come back to this.
+	strcpy(dirN, pathname);
+	strcpy(basN, pathname);
+	//Assign those copies.
+	parent = dirname(dirN);
+	child = basename(basN);
+
+	//Grab MINODE of parent.
+	//May have to tokenize this.. we will see.
+	int pino = getino(&dev, parent);
+	pip = iget(dev, pino);
+
+	//Verification for...
+	//(1). Is it a DIR?
+	//(2). Child doesn't already exist.
+	
+}
+
 
 main(int argc, char *argv[ ])
 {

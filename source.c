@@ -5,6 +5,7 @@
 #include <libgen.h>
 #include <sys/stat.h>
 #include <ext2fs/ext2_fs.h> 
+#include <time.h>
 
 #include "util.c"
 #include "type.h"
@@ -199,10 +200,19 @@ int make_dir()
 	int pino = getino(&dev, parent);
 	pip = iget(dev, pino);
 
+	//TODO:
 	//Verification for...
 	//(1). Is it a DIR?
 	//(2). Child doesn't already exist.
-	
+	mymkdir(pip, child);
+
+	//Touch time
+	pip->INODE.i_atime = time(0L);
+	pip->INODE.i_links_count += 1;
+	pip->dirty = 1;
+
+	iput(pip);
+
 }
 
 
@@ -292,8 +302,8 @@ main(int argc, char *argv[ ])
           chdir();
        if (strcmp(cmd, "pwd")==0)
           pwd();
-       //if (strcmp(cmd, "quit")==0)
-          //quit();		
+       if (strcmp(cmd, "mkdir")==0)
+          make_dir();		
 	}
 
 }

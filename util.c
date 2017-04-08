@@ -160,14 +160,12 @@ int ialloc(int dev)
 
 int mymkdir(MINODE *pip, char *name)
 {
-	printf("Do we make it into mymkdir?\n");
 	int tempIno, tempBno;
 	MINODE *mip;
 	char buff[BLKSIZE];
 	char *cp;
 
 	//Lets get some memory for these fools.
-	printf("char name: %s", name);
 	tempIno = ialloc(dev);
 	tempBno = balloc(dev);
 
@@ -224,7 +222,6 @@ int mymkdir(MINODE *pip, char *name)
 
 int enter_name(MINODE *pip, int myino, char *myname)
 {
-	printf("Do we make it into here?\n");
 	char buff[BLKSIZE], buff2[BLKSIZE];
 	char *cp;
 
@@ -274,6 +271,43 @@ int enter_name(MINODE *pip, int myino, char *myname)
 		}
 
 	}
+}
+
+int my_creat(MINODE *pip, char *name)
+{
+	int tempIno, tempBno;
+	MINODE *mip;
+	char buff[BLKSIZE];
+	char *cp;
+
+	//Lets get some memory for these fools.
+	printf("char name: %s", name);
+	tempIno = ialloc(dev);
+	tempBno = balloc(dev);
+
+	//Get that memory.
+	mip = iget(dev, tempIno);
+
+	//Temporary inode, let's fill out the new memory slot.
+	INODE *tip = &mip->INODE;
+
+	tip->i_mode = 0x81A4;
+	tip->i_uid = running->uid;
+	tip->i_gid = 0;
+	tip->i_size = 0;
+	tip->i_links_count = 1;
+	tip->i_atime = tip->i_ctime = tip->i_mtime = time(0L); //this may break..
+	tip->i_blocks = 2;
+	tip->i_block[0] = tempBno;
+
+	for (int i = 1; i < 15; i++)
+	{
+		tip->i_block[i] = 0;
+	}
+
+	mip->dirty = 1;
+	iput(mip);
+	enter_name(pip, tempIno, name);
 }
 
 

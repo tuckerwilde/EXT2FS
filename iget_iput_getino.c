@@ -62,6 +62,7 @@ MINODE *iget(int dev, int ino)
   char buf[BLKSIZE];
   MINODE *mip;
   INODE *ip;
+  printf("dev: %d\n", dev);
 
   for (i=0; i < NMINODE; i++){
 	mip = &minode[i];
@@ -126,15 +127,14 @@ int getino(int *dev, char *pathname)
   	INODE *ip;
   	MINODE *mip;
 	
-
-	printf("getino: pathname=%s\n", pathname);
+	
 	//Quick root check.
 	if (strcmp(pathname, "/")==0)
 	  	return 2;
 	//Is it absolute? If so get the root minode.
   	if (pathname[0]=='/')
   	{
-	 	mip = iget(dev, 2);
+	 	mip = iget(*dev, 2);
   	}
   	else
   	{

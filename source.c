@@ -197,6 +197,7 @@ int make_dir()
 
 	//Grab MINODE of parent.
 	//May have to tokenize this.. we will see.
+	printf("dev in make_dir %d\n", dev);
 	int pino = getino(&dev, parent);
 	pip = iget(dev, pino);
 
@@ -210,11 +211,58 @@ int make_dir()
 	pip->INODE.i_atime = time(0L);
 	pip->INODE.i_links_count += 1;
 	pip->dirty = 1;
+	pip->INODE.i_mode = 0040000;
 
 	iput(pip);
 
 }
 
+
+int creat_file()
+{
+	MINODE *mip, *pip;
+	char dirN[256], basN[256];
+	char *parent, *child;
+	if (pathname[0] == "/")
+	{
+		//Its absolute
+		mip = root;
+		dev = root->dev;
+	}
+	else
+	{
+		//Assume it's relative.
+		mip = running->cwd;
+		dev = running->cwd->dev;
+	}
+	//The function that destroys original copy.
+	//So make more copies...
+	//Also this may cause Seg Faults.. so come back to this.
+	strcpy(dirN, pathname);
+	strcpy(basN, pathname);
+	//Assign those copies.
+	parent = dirname(dirN);
+	child = basename(basN);
+
+	//Grab MINODE of parent.
+	//May have to tokenize this.. we will see.
+	int pino = getino(&dev, parent);
+	pip = iget(dev, pino);
+
+	//TODO:
+	//Verification for...
+	//(1). Is it a DIR?
+	//(2). Child doesn't already exist.
+	my_creat(pip, child);
+
+	//Touch time
+	pip->INODE.i_atime = time(0L);
+	pip->INODE.i_links_count = 1;
+	pip->dirty = 1;
+	pip->INODE.i_mode = 0100000;
+
+	iput(pip);
+}
 
 main(int argc, char *argv[ ])
 {
@@ -272,7 +320,7 @@ main(int argc, char *argv[ ])
 		char inputT[128];
 		char *token, *hold;
 		strcpy(pathname, "");
-		printf("input command: [ls|cd|pwd|quit] $ ");
+		printf("input command: [ls|cd|pwd|mkdir|creat|quit] $ ");
 
 		//grab command
 		fgets(inputT, 128, stdin);
@@ -296,14 +344,16 @@ main(int argc, char *argv[ ])
 		
 		printf("cmd: %s\t pathname: %s\n\n", cmd, pathname);
 
-       if (strcmp(cmd, "ls")==0)
-          ls();
-       if (strcmp(cmd, "cd")==0)
-          chdir();
-       if (strcmp(cmd, "pwd")==0)
-          pwd();
-       if (strcmp(cmd, "mkdir")==0)
-          make_dir();		
+		if (strcmp(cmd, "ls")==0)
+			ls();
+		if (strcmp(cmd, "cd")==0)
+			chdir();
+		if (strcmp(cmd, "pwd")==0)
+			pwd();
+		if (strcmp(cmd, "mkdir")==0)
+			make_dir();
+		if (strcmp(cmd, "creat")==0)
+			creat_file();
 	}
 
 }

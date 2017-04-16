@@ -37,6 +37,10 @@ int search(MINODE *mip, char *name)
 		get_block(mip->dev, mip->INODE.i_block[i], dbuf);
 		dp = (DIR *)dbuf;
 		cp = dbuf;
+
+		if (mip->INODE.i_block[i] == 0)
+			return 0;
+
 		while(cp < &dbuf[1024])
 		{
 			strncpy(sbuf, dp->name, dp->name_len);
@@ -157,7 +161,6 @@ int getino(int *dev, char *pathname)
 	 	
 	 	//Search for that tok pathname, return the ino if found
 		ino = search(mip, name[i]);
-
 		//if the name doesn't exist, return 0.
 		if (ino==0){
 			iput(mip);

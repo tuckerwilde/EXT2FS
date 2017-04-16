@@ -448,6 +448,80 @@ int unlink()
 	iput(mip);
 }
 
+int symlink()
+{
+	//assuming oldname (pathname) only has 60 chars...
+	char oldname[84],temppath2[128], temppath1[128];
+	char *basen, *dirn, *write_in;
+	int old_ino, par_ino;
+	MINODE *pip, *mip;
+	//This is the pathname, i.e /a/b/c
+	strncpy (oldname, pathname, 60);
+
+	//Let's get base and dir
+	strcpy(temppath1, parameter);
+	strcpy(temppath2, parameter);
+	dirn = dirname(temppath1);
+	basen = basename(temppath2);
+
+	old_ino = getino(&dev, parameter);
+	if (old_ino != 0)
+	{
+		printf("This file already exists\n");
+		return;
+	}
+	//This means they are the same and not absolute.
+	printf("Dirn: %s basen: %s param: %s\n",dirn, basen, parameter);
+	if (strcmp(basen, parameter) == 0)
+	{
+		par_ino = running->cwd->ino;
+		pip = iget(dev, par_ino);
+		my_creat(pip, basen);
+	}
+	else
+	{
+		par_ino = getino(&dev, dirn);
+
+		pip = iget(dev, par_ino);
+		printf("\n\npar_ino:%d dirn: %s\n", par_ino, dirn);
+		my_creat(pip, basen);
+	}
+
+	//Write oldname into that new file.
+	old_ino = getino(&dev, parameter);
+	mip = iget(dev, old_ino);
+	mip->INODE.i_mode = 0xA000;
+	//write_in = (char*)mip->INODE.i_block;
+	strcpy(mip->INODE.i_block, pathname);
+	iput(mip);
+}
+
+int readlink()
+{
+	int temp_ino;
+	char *cp;
+	MINODE *mip;
+
+	temp_ino = getino(&dev, pathname);
+
+	if (temp_ino == 0)
+	{
+		printf("This path does not exist.\n");
+		return;
+	}
+	mip = iget(dev, temp_ino);
+	
+	if (mip->INODE.i_mode != 0xA000)
+	{
+		printf("This is not a symbolic link\n");
+		return;
+	}
+	
+	printf("%s\n",mip->INODE.i_block);
+
+	printf("\n");
+
+}
 
 main(int argc, char *argv[ ])
 {
@@ -505,7 +579,7 @@ main(int argc, char *argv[ ])
 		char inputT[128];
 		char *token, *hold;
 		strcpy(pathname, "");
-		printf("input command: [ls|cd|pwd|mkdir|creat|link|quit] $ ");
+		printf("input command: [ls|cd|pwd|mkdir|creat|rmdir|link|unlink|symlink|quit] $ ");
 
 		//grab command
 		fgets(inputT, 128, stdin);
@@ -555,6 +629,12 @@ main(int argc, char *argv[ ])
 			hard_link();
 		if (strcmp(cmd, "unlink")==0)
 			unlink();
+		if (strcmp(cmd, "symlink") == 0)
+			symlink();
+		if (strcmp(cmd, "readlink") == 0)
+			readlink();
+		if (strcmp(cmd, "") == 0)
+			continue;
 
 		strcpy(parameter, "");
 	}

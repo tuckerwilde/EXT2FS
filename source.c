@@ -1,3 +1,24 @@
+/*
+                                                 ,  ,
+                                               / \/ \
+                                              (/ //_ \_
+     .-._                                      \||  .  \
+      \  '-._                            _,:__.-"/---\_ \
+ ______/___  '.    .--------------------'~-'--.)__( , )\ \
+`'--.___  _\  /    |             Here        ,'    \)|\ `\|
+     /_.-' _\ \ _:,_          Be Dragons           " ||   (
+   .'__ _.' \'-/,`-~`                                |/
+       '. ___.> /=,|  Abandon hope all ye who enter  |
+        / .-'/_ )  '---------------------------------'
+        )'  ( /(/
+             \\ "
+              '=='
+
+This monstrosity was built to do one thing, and one thing only:
+	
+					Get the fuck out of 360.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -13,7 +34,7 @@
                                // get_block/put_block, tst/set/clr bit functions
 
 char *disk = "mydisk";
-char line[128], cmd[64], pathname[64];
+char line[128], cmd[64], pathname[64], parameter[64];
 char buf[BLKSIZE];              // define buf1[ ], buf2[ ], etc. as you need
 
 //Initializer
@@ -72,19 +93,24 @@ int ls()
 		tempIno = running->cwd->ino;
 		mip = running->cwd;
 	}
-
-	get_block(mip->dev, mip->INODE.i_block[0], buff);
-	dp = (DIR *)buff;
-	cp = buff;
-
-	while (cp < &buff[1024])
+	printf("Name\t Rec_Len\t Ino\t\n");
+	while (mip->INODE.i_block[i])
 	{
-		strncpy(buff2, dp->name, dp->name_len);
-		buff2[dp->name_len] = 0;
-		printf("%s ", buff2);
-		cp += dp->rec_len;
-		dp = (DIR *)cp;
+		get_block(dev, mip->INODE.i_block[i], buff);
+		cp = buff;
+		dp = (DIR *)buff;
+		while (cp < &buff[1024])
+		{
+			strncpy(buff2, dp->name, dp->name_len);
+			buff2[dp->name_len] = 0;
+			printf("%s\t %d\t %d\t\n", buff2, dp->rec_len,dp->inode);
+			cp += dp->rec_len;
+			dp = (DIR *)cp;
+		}
+		i++;
 	}
+
+
 	printf("\n");
 	if (mip != running->cwd)
 	{
@@ -221,6 +247,7 @@ int make_dir()
 int creat_file()
 {
 	MINODE *mip, *pip;
+	int tempIno;
 	char dirN[256], basN[256];
 	char *parent, *child;
 	if (pathname[0] == "/")
@@ -259,10 +286,154 @@ int creat_file()
 	pip->INODE.i_atime = time(0L);
 	pip->INODE.i_links_count = 1;
 	pip->dirty = 1;
-	pip->INODE.i_mode = 0100000;
 
 	iput(pip);
 }
+
+int rmdir()
+{
+	int temp_ino, par_ino;
+	MINODE *mip, *pip;
+	char buff[BLKSIZE];
+	char *cp;
+
+	//Determine dev.
+	//Ino and MINODE of pathname
+	temp_ino = getino(&dev, pathname);
+	mip = iget(dev, temp_ino);
+
+	//TODO: Check ownership.
+
+	//Check for valid path
+	if (temp_ino == 0)
+	{
+		printf("This isn't a valid pathname\n");
+	}
+	//Do quick checks.
+	if (S_ISREG(mip->INODE.i_mode))
+	{
+		printf("This isn't a directory\n");
+		return;
+	}
+	//Check for empty?
+	get_block(dev, mip->INODE.i_block[0], buff);
+	//Could check that the parent '..' is 1012?
+	dp = (DIR *)buff;
+	cp = buff;
+	cp += dp->rec_len;
+	dp = (DIR *)cp;
+	//This should give us parent inode.
+	par_ino = dp->inode;
+	if (dp->rec_len != 1012)
+	{
+		printf("Directory is not empty\n");
+		return;
+	}
+
+	//ALL CHECKS COMPLETE. Move on.
+	//Utlize fancy new truncate function. Clear this certain
+	// block then work on removing the name from parent
+	truncate(mip);
+	idealloc(dev, mip->ino);
+	//put the minode back
+	iput(mip);
+	pip = iget(dev, par_ino);
+
+	//Call the helper function
+	rm_child(pip, basename(pathname));
+
+	//Decrements
+	pip->INODE.i_links_count--;
+	pip->INODE.i_atime = time(0L);
+	pip->dirty = 1;
+	iput(pip);
+	return;
+
+
+}
+
+
+int hard_link()
+{
+	//Get INO of pathname.
+	int temp_ino, par_ino;
+	MINODE *mip, *tip;
+	char parent[64], child[64];
+	char *basen, *dirn;
+
+	temp_ino = getino(&dev, pathname);
+	printf("Received INO of %d\n", temp_ino);
+
+	if (temp_ino == 0)
+	{
+		printf("This pathname doesn't exist...\n");
+		return;
+	}
+
+	//Get the MINODE corresponding to that ino.
+	mip = iget(dev, temp_ino);
+
+	//Quick check for smartness.
+	if (S_ISDIR(mip->INODE.i_mode))
+	{
+		printf("Can't link a directory...\n");
+		return;
+	}
+
+	//Dissect parameter into base and dir
+	strcpy(parent, parameter);
+	strcpy(child, parameter);
+	//Example: /a/b/c
+	basen = dirname(parent); // /a/b
+	dirn = basename(child); // cs
+
+
+	//Check /x/y exists
+	par_ino = getino(&dev, basen);
+	if (par_ino == 0)
+	{
+		printf("Parent doesn't exist\n");
+		return;
+	}
+
+	tip = iget(dev, par_ino);
+	enter_name(tip, temp_ino, dirn);
+	tip->INODE.i_links_count++;
+
+	iput(tip);
+	iput(mip);
+}
+
+//TODO: Finish unlink...
+/*
+int unlink()
+{
+	int path_ino;
+	char *basen;
+	MINODE *mip;
+
+	path_ino = getino(&dev, pathname);
+	mip = iget(dev, path_ino);
+
+	//Verify it's a file
+	if (S_ISDIR(mip->INODE.i_mode))
+	{
+		printf("Can't unlink a directory...\n");
+		return;
+	}
+
+	mip->INODE.i_links_count--;
+	truncate(mip);
+
+	idealloc(dev, mip->ino);
+
+	basen = basename(pathname);
+
+
+
+
+}
+*/
 
 main(int argc, char *argv[ ])
 {
@@ -320,7 +491,7 @@ main(int argc, char *argv[ ])
 		char inputT[128];
 		char *token, *hold;
 		strcpy(pathname, "");
-		printf("input command: [ls|cd|pwd|mkdir|creat|quit] $ ");
+		printf("input command: [ls|cd|pwd|mkdir|creat|link|quit] $ ");
 
 		//grab command
 		fgets(inputT, 128, stdin);
@@ -331,7 +502,7 @@ main(int argc, char *argv[ ])
 
 		//Pretty janky fix to no fucking pathname.
 		strcpy(cmd,token);
-		hold = strtok(NULL, "");
+		hold = strtok(NULL, " ");
 
 		if (!hold)
 		{
@@ -342,7 +513,17 @@ main(int argc, char *argv[ ])
 			strcpy(pathname, hold);
 		}
 		
-		printf("cmd: %s\t pathname: %s\n\n", cmd, pathname);
+
+		//For link...
+		hold = strtok(NULL, "");
+		
+		if (hold)
+			strcpy(parameter, hold);
+
+		if (strcmp(parameter, "")==0)
+			printf("cmd: %s\t pathname: %s\n\n", cmd, pathname);
+		else
+			printf("cmd: %s\t pathname: %s\t parameter: %s\n\n", cmd, pathname, parameter);
 
 		if (strcmp(cmd, "ls")==0)
 			ls();
@@ -354,6 +535,12 @@ main(int argc, char *argv[ ])
 			make_dir();
 		if (strcmp(cmd, "creat")==0)
 			creat_file();
+		if (strcmp(cmd, "rmdir")==0)
+			rmdir();
+		if (strcmp(cmd, "link")==0)
+			hard_link();
+
+		strcpy(parameter, "");
 	}
 
 }

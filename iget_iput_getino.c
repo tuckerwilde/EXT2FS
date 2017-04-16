@@ -30,26 +30,29 @@ int search(MINODE *mip, char *name)
 {
 	char *cp;
 	char dbuf[1024], sbuf[1024];
-	
-	get_block(mip->dev, mip->INODE.i_block[0], dbuf);
-	dp = (DIR *)dbuf;
-	cp = dbuf;
 
-	while(cp < &dbuf[1024])
+
+	for (int i = 0; i < 12; i++)
 	{
-		strncpy(sbuf, dp->name, dp->name_len);
-		sbuf[dp->name_len] = 0;
-
-
-		if (strcmp(sbuf, name) == 0)
+		get_block(mip->dev, mip->INODE.i_block[i], dbuf);
+		dp = (DIR *)dbuf;
+		cp = dbuf;
+		while(cp < &dbuf[1024])
 		{
-			printf("The directory is found at INODE: %d!\n", dp->inode);
-			return dp->inode;
-		} 
+			strncpy(sbuf, dp->name, dp->name_len);
+			sbuf[dp->name_len] = 0;
 
-		//else continue
-		cp += dp->rec_len;
-		dp = (DIR *)cp;
+
+			if (strcmp(sbuf, name) == 0)
+			{
+				printf("The directory is found at INODE: %d!\n", dp->inode);
+				return dp->inode;
+			} 
+
+			//else continue
+			cp += dp->rec_len;
+			dp = (DIR *)cp;
+		}
 	}
 	printf("Directory not found...\n");
 	return 0;
@@ -62,7 +65,6 @@ MINODE *iget(int dev, int ino)
   char buf[BLKSIZE];
   MINODE *mip;
   INODE *ip;
-  printf("dev: %d\n", dev);
 
   for (i=0; i < NMINODE; i++){
 	mip = &minode[i];

@@ -200,6 +200,7 @@ int mymkdir(MINODE *pip, char *name)
 
 	//"."
 	dp->inode = tempIno;
+	printf("tempino: %d\n", tempino);
 	dp->rec_len = 12;
 	dp->name_len = 1;
 	strcpy(dp->name, ".");
@@ -209,6 +210,7 @@ int mymkdir(MINODE *pip, char *name)
 
 	//".."
 	dp->inode = pip->ino;
+	printf("pip->ino: %d\n",pip->ino);
 	dp->rec_len = BLKSIZE-12;
 	dp->name_len = 2;
 	strcpy(dp->name, "..");
@@ -281,7 +283,6 @@ int my_creat(MINODE *pip, char *name)
 	char *cp;
 
 	//Lets get some memory for these fools.
-	printf("char name: %s", name);
 	tempIno = ialloc(dev);
 	tempBno = balloc(dev);
 
@@ -310,5 +311,158 @@ int my_creat(MINODE *pip, char *name)
 	enter_name(pip, tempIno, name);
 }
 
+int incFreeBlocks(int dev)
+{
+  char buff[BLKSIZE];
+
+  get_block(dev, 1, buff);
+  sp = (SUPER *)buff;
+  sp->s_free_blocks_count++;
+  put_block(dev, 1, buff);
+
+  get_block(dev, 2, buff);
+  gp = (GD *)buff;
+  gp->bg_free_blocks_count++;
+  put_block(dev, 2, buff);
+
+}
+
+int bdealloc(int dev, int bno)
+{
+	char buff[BLKSIZE];
+	//Grab the bmap block
+	get_block(dev, bmap, buff);
+	//Clr the bit we would like
+	clr_bit(buff, bno);
+	//Increase the super and gd count
+	incFreeBlocks(dev);
+	//put it back, not in use anymore.
+	put_block(dev, bmap, buff);
+}
+
+int incFreeInodes(int dev)
+{
+  char buff[BLKSIZE];
+
+  // dec free inodes count in SUPER and GD
+  get_block(dev, 1, buff);
+  sp = (SUPER *)buff;
+  sp->s_free_inodes_count++;
+  put_block(dev, 1, buff);
+
+  get_block(dev, 2, buff);
+  gp = (GD *)buff;
+  gp->bg_free_inodes_count++;
+  put_block(dev, 2, buff);
+}
+
+int idealloc(int dev, int ino)
+{
+	char buff[BLKSIZE];
+	//All same as bdealloc, but its the ino instead
+	get_block(dev, imap, buff);
+	clr_bit(buff, ino);
+	incFreeInodes(dev);
+	put_block(dev, imap, buff);
+}
+
+int rm_child(MINODE *pip, char *name)
+{
+	char buff[BLKSIZE], namebuff[BLKSIZE], removebuff[BLKSIZE];
+	char *cp, *tempcp;
+	int ideal_len, cur_len, prev_len, mem_to_move, run_total, temphold;
+
+	//Deletion purposes
+	for (int i = 0; i < BLKSIZE; i++)
+	{
+		removebuff[i] = 0;
+	}
+	for (int i = 0; i < 12; i++)
+	{
+		get_block(dev, pip->INODE.i_block[i], buff);
+		dp = (DIR *)buff;
+		cp = buff;
+		tempcp = buff;
+
+		//This is just tallying how far we've gone.
+		run_total = 0;
+
+		//Search for the name
+		while (cp < &buff[BLKSIZE])
+		{
+			//Get the name into a buff
+			strcpy(namebuff, dp->name);
+			//Tricky null terminator
+			namebuff[dp->name_len] = 0;
+			//Tally the running total.
+			run_total += dp->rec_len;
+			cur_len = dp->rec_len;
+			ideal_len = (4*((8+dp->name_len + 3)/4));
+
+			if (strcmp(namebuff, name) == 0)
+			{
+				printf("Do we get here\n");
+				if (dp->rec_len == BLKSIZE)
+				{
+					printf("First and Only.\n");
+					bdealloc(dev, pip->INODE.i_block[i]);
+					//Zero it out.
+					pip->INODE.i_block[i] = 0;
+					//Decrement parent
+					pip->INODE.i_size -= BLKSIZE;
+					//Move everything forward.
+					int k = i;
+					while (k < 12 && pip->INODE.i_block[k+1])
+					{
+						pip->INODE.i_block[k+1] = pip->INODE.i_block[k];
+					}
+					put_block(dev, pip->INODE.i_block[i], buff);
+					return;
+				}
+				else if (dp->rec_len > ideal_len)
+				{
+					//Move the pointer back
+					cp -= prev_len;
+					dp = (DIR *)cp;
+					dp->rec_len += cur_len;
+				}
+				else
+				{
+					int len = BLKSIZE - ((cp+cur_len) - buff);
+					printf("Length %d\n", len);
+					memmove(cp, cp+cur_len, len);
+					printf("Do we get here\n");
+					while (cp + dp->rec_len < &buff[1024] - cur_len)
+					{
+						printf("cp: %d buff: %d\n", cp, &buff[1024]);
+						printf("Name: %s\n", dp->name);
+						cp += dp->rec_len;
+						dp = (DIR *)cp;
+					}
+					dp->rec_len += cur_len;
+				}
+				put_block(dev, pip->INODE.i_block[i], buff);
+				return;
+			}
+			prev_len = dp->rec_len;
+			tempcp += dp->rec_len;
+			cp += dp->rec_len;
+			dp = (DIR *)cp;
+		}
+	}
+	
+}
+
+int truncate(MINODE *mip)
+{
+	for (int i = 0; i < 12; i++)
+	{
+		if (mip->INODE.i_block[i] == 0)
+			break;
+		bdealloc(mip->dev, mip->INODE.i_block[i]);
+	}
+	mip->dirty = 1;
+	mip->INODE.i_size = 0;
+}
 
 #endif

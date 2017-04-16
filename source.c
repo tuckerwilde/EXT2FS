@@ -93,7 +93,7 @@ int ls()
 		tempIno = running->cwd->ino;
 		mip = running->cwd;
 	}
-	printf("Name\t Rec_Len\t Ino\t\n");
+	printf("Name\t Rec_Len Ino\n");
 	while (mip->INODE.i_block[i])
 	{
 		get_block(dev, mip->INODE.i_block[i], buff);
@@ -103,7 +103,7 @@ int ls()
 		{
 			strncpy(buff2, dp->name, dp->name_len);
 			buff2[dp->name_len] = 0;
-			printf("%s\t %d\t %d\t\n", buff2, dp->rec_len,dp->inode);
+			printf("%s\t %d\t %d\n", buff2, dp->rec_len,dp->inode);
 			cp += dp->rec_len;
 			dp = (DIR *)cp;
 		}
@@ -405,12 +405,12 @@ int hard_link()
 }
 
 //TODO: Finish unlink...
-/*
+
 int unlink()
 {
-	int path_ino;
-	char *basen;
-	MINODE *mip;
+	int path_ino, par_ino;
+	char *basen, *dirn, temppath1[128], temppath2[128];
+	MINODE *mip, *pip;
 
 	path_ino = getino(&dev, pathname);
 	mip = iget(dev, path_ino);
@@ -423,17 +423,31 @@ int unlink()
 	}
 
 	mip->INODE.i_links_count--;
-	truncate(mip);
 
-	idealloc(dev, mip->ino);
+	//This is a check to see if the file has zero connections
+	//Essentially a delete.
+	if (mip->INODE.i_links_count == 0)
+	{
+		truncate(mip);
+		idealloc(dev, mip->ino);
+	}
 
-	basen = basename(pathname);
 
+	strcpy(temppath1,pathname);
+	strcpy(temppath2,pathname);
+	basen = basename(temppath1);
+	dirn = dirname(temppath2);
 
+	printf("Basename: %s\n", basen);
 
+	par_ino = getino(&dev, dirn);
+	pip = iget(dev, par_ino);
 
+	rm_child(pip, basen);
+	iput(pip);
+	iput(mip);
 }
-*/
+
 
 main(int argc, char *argv[ ])
 {
@@ -539,6 +553,8 @@ main(int argc, char *argv[ ])
 			rmdir();
 		if (strcmp(cmd, "link")==0)
 			hard_link();
+		if (strcmp(cmd, "unlink")==0)
+			unlink();
 
 		strcpy(parameter, "");
 	}

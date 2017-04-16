@@ -200,7 +200,7 @@ int mymkdir(MINODE *pip, char *name)
 
 	//"."
 	dp->inode = tempIno;
-	printf("tempino: %d\n", tempino);
+	printf("tempino: %d\n", tempIno);
 	dp->rec_len = 12;
 	dp->name_len = 1;
 	strcpy(dp->name, ".");
@@ -428,10 +428,17 @@ int rm_child(MINODE *pip, char *name)
 				}
 				else
 				{
+					//Could be a better way?
 					int len = BLKSIZE - ((cp+cur_len) - buff);
 					printf("Length %d\n", len);
+					//This also is confusing. This is from moving
+					//everything left from just past the found spot
+					//all the way to the end of the block.
 					memmove(cp, cp+cur_len, len);
 					printf("Do we get here\n");
+					//This looks confusing.. and it is...
+					//Quick explanation: This goes until we overflow
+					//with the current rec_len. Then adds it at the end.
 					while (cp + dp->rec_len < &buff[1024] - cur_len)
 					{
 						printf("cp: %d buff: %d\n", cp, &buff[1024]);
@@ -439,6 +446,7 @@ int rm_child(MINODE *pip, char *name)
 						cp += dp->rec_len;
 						dp = (DIR *)cp;
 					}
+					//Add the deleted length.
 					dp->rec_len += cur_len;
 				}
 				put_block(dev, pip->INODE.i_block[i], buff);

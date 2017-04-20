@@ -463,6 +463,7 @@ int rm_child(MINODE *pip, char *name)
 
 int truncate(MINODE *mip)
 {
+	//TODO: Truncate indirect and double indirect.
 	for (int i = 0; i < 12; i++)
 	{
 		if (mip->INODE.i_block[i] == 0)
@@ -471,6 +472,105 @@ int truncate(MINODE *mip)
 	}
 	mip->dirty = 1;
 	mip->INODE.i_size = 0;
+}
+
+int myread(int temp_fd, char buff[], int nbytes)
+{
+	//nbytes is how many bytes to read.
+	int count = 0;
+	int left = 0;
+	int avail, lbk, startByte, blk, blkhold, remain;
+
+	char *cq = buff;
+	char readbuff[BLKSIZE]; 
+	char tempbuff[BLKSIZE];
+	char tempbuff2[BLKSIZE];
+
+	OFT *oftp;
+
+	oftp = running->fd[temp_fd];
+
+	avail = oftp->mptr->INODE.i_size - oftp->offset;
+
+	while (nbytes && avail)
+	{
+		lbk = oftp->offset / BLKSIZE;
+		printf("%d\n", lbk);
+
+		startByte = oftp->offset % BLKSIZE;
+
+		if (lbk < 12)
+		{
+			blk = oftp->mptr->INODE.i_block[lbk];
+		}
+		else if (lbk >= 12 && lbk < (256 + 12))
+		{
+			get_block(dev, oftp->mptr->INODE.i_block[12], tempbuff);
+			blk = tempbuff[lbk-12];
+		}
+		else
+		{
+			get_block(dev, oftp->mptr->INODE.i_block[13],tempbuff2);
+			blkhold = (lbk - (256+12))/256;
+
+			get_block(dev, tempbuff2[blkhold], tempbuff);
+			blk = tempbuff[(lbk - (256+12))%256];
+		}
+	
+
+		get_block(oftp->mptr->dev, blk, readbuff);
+
+		//This points at the exact spot in the block.
+		char *cp = readbuff + startByte;
+		//This is how much space there is in the block we just got.
+		remain = BLKSIZE - startByte;
+		//Lets move through this.
+		//Three step algorithm!
+
+		//Check first if we stop before end of block...
+		if (nbytes <= remain) //We won't need to go back to outer loop.
+			left = nbytes;
+		else
+			left = remain; //We go until end of block, get new block.
+		//REAL QUICK overflow check!
+		if (avail < left) //Essentailly we go over the whole spot..
+			left = avail;
+
+		//Great! Error checking out of the way.
+		//Let's clear a buffer space.
+		memset(cq, 0, BLKSIZE); //All of it.
+		strncpy(cq, cp, left); //Go read comments above. Move stuff.
+
+		//Updates.
+		remain -= left; //Whats left in this block.
+		nbytes -= left; //Whats left for us to read
+		avail -= left; //Whats left in the whole entire group.
+		count += left; //How many blocks we've read!
+		oftp->offset += left;
+		//Now to make it like cat...
+		//Should be a string. If it breaks come back to this.
+		printf("%s", cq); 
+	}
+	return count;
+}
+
+int mywrite(int temp_fd, char buff[], int nbytes)
+{
+	int lbk = 0, startByte = 0;
+	OFT *oftp;
+
+	oftp = running->fd[temp_fd];
+
+	while (nbytes > 0)
+	{
+		lbk = oftp->offset/BLKSIZE;
+		startByte = oftp->offset%BLKSIZE;
+
+		if (lbk < 12)
+		{
+			
+		}
+	}
 }
 
 #endif

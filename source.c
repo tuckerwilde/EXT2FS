@@ -69,12 +69,13 @@ int mount_root()
 }
 
 
+/************* LEVEL 1 FUNCTIONS START **********************/
 int ls()
 {
 	int tempIno, i = 0;
 	char *cp;
 	int dev = running->cwd->dev;
-	MINODE *mip = running->cwd;
+	MINODE *mip = running->cwd, *tip;
 	char buff[1024], buff2[1024];
 	
 	if (strcmp(pathname, "") != 0)
@@ -93,7 +94,7 @@ int ls()
 		tempIno = running->cwd->ino;
 		mip = running->cwd;
 	}
-	printf("Name\t Rec_Len Ino\n");
+	printf("Name\t Rec_Len Ino\n SIZE");
 	while (mip->INODE.i_block[i])
 	{
 		get_block(dev, mip->INODE.i_block[i], buff);
@@ -101,9 +102,11 @@ int ls()
 		dp = (DIR *)buff;
 		while (cp < &buff[1024])
 		{
+			tip = iget(dev, dp->inode);
 			strncpy(buff2, dp->name, dp->name_len);
 			buff2[dp->name_len] = 0;
-			printf("%s\t %d\t %d\n", buff2, dp->rec_len,dp->inode);
+			printf("%s\t %d\t %d\t %d\n", buff2, dp->rec_len,dp->inode, tip->INODE.i_size);
+			iput(tip);
 			cp += dp->rec_len;
 			dp = (DIR *)cp;
 		}
@@ -523,6 +526,228 @@ int readlink()
 
 }
 
+/************* LEVEL 1 FUNCTIONS END **********************/
+/************* LEVEL 2 FUNCTIONS START **********************/
+int open_file()
+{
+	/*
+	Our inputs will be
+	->Pathname: the file to open
+	->parameter: tells us to R|W|RW|APPEND, 0,1,2,3 respectively
+	*/
+	int temp_ino, i, mode;
+	MINODE *mip;
+	OFT *oftp = malloc(sizeof(OFT));
+
+	mode = atoi(pathname);
+	
+	if (pathname[0] == '/')
+	{
+		//Absolute
+		dev = root->dev;
+	}
+	else
+	{
+		//Relative
+		running->cwd->dev;
+	}
+
+	temp_ino = getino(&dev, pathname);
+	if (temp_ino == 0)
+	{
+		printf("File doesn't exist\n");
+		return;
+	}
+
+	mip = iget(dev, temp_ino);
+	
+	//TODO: Check permissions.
+	if (!S_ISREG(mip->INODE.i_mode))
+	{
+		printf("Cannot open a directory\n");
+		return;
+	}
+
+	//TODO: Check whether the file is ALREADY opened with INCOMPATIBLE mode.
+	oftp->mode = mode;
+	oftp->refCount = 1;
+	oftp->mptr = mip;
+
+	switch(mode)
+	{
+		case 0: oftp->offset = 0; // R: offset = 0
+				break;
+		case 1: truncate(mip); // W: truncate file to 0 size
+				oftp->offset = 0;
+				break;
+		case 2: oftp->offset = 0; // RW: do NOT truncate file
+				break;
+		case 3: oftp->offset = mip->INODE.i_size; // APPEND mode
+				break;
+		default: printf("Invalid Mode\n");
+				return -1;
+	}
+	//Find first FD that is open.
+	for (i = 0; i < NFD; i++)
+	{
+		if (running->fd[i] == NULL)
+		{
+			running->fd[i] = (oftp);
+			break;
+		}
+	}
+
+	//Update time
+	if ((int)parameter == 0)
+	{
+		mip->INODE.i_atime = time(0L);
+		mip->dirty = 1;
+	}
+	else
+	{
+		mip->INODE.i_atime = mip->INODE.i_mtime = time(0L);
+		mip->dirty = 1;
+	}
+	//We made it this far?? Really? That's impressive.
+	//This returns the FD.
+	hold_fd = i;
+	printf("File Descriptor opened: %d\n", i);
+	return i;
+}
+
+int close_file()
+{
+	int fd_close;
+	OFT *oftp = malloc(sizeof(OFT));
+	MINODE *mip;
+
+	fd_close = atoi(pathname);
+	printf("close: %d\n", fd_close);
+	
+	if (fd_close > NFD)
+	{
+		printf("Out of range of FDs\n");
+		return -1;
+	}
+
+	//Check for NULL pointer.
+	if (running->fd[fd_close] == NULL)
+	{
+		printf("This FD is not in use\n");
+		return -1;
+	}
+
+	oftp = (running->fd[fd_close]);
+	running->fd[fd_close] = 0;
+	oftp->refCount--;
+	
+	if (oftp->refCount > 0)
+	{
+		return 0;
+	}
+
+	mip = oftp->mptr;
+	iput(mip);
+	printf("Closed FD %d\n", fd_close);
+	
+
+}
+
+int l_seek(int fd, int offset)
+{
+
+}
+
+int pfd()
+{
+	//TODO: represent mode in char form
+	printf("FD\tMODE\tOFFSET\tINODE\n");
+	printf("================================\n");
+	for (int i = 0; i < NFD; i++)
+	{
+
+		if (running->fd[i] == NULL)
+		{
+			continue;
+		}
+		else
+		{
+			printf("%d\t%d\t%d\t%d\n", i, running->fd[i]->mode, running->fd[i]->offset, running->fd[i]->mptr->ino);
+		}
+	}
+	printf("================================\n");
+}
+
+int read_file()
+{
+	//Check for read or write.
+	//fd and #of bytes
+	int temp_fd, n_bytes;
+	char buff[BLKSIZE];
+	OFT *oftp;
+
+	temp_fd = atoi(pathname);
+	n_bytes = atoi(parameter);
+
+	oftp = running->fd[temp_fd];
+
+	if (oftp == 0)
+	{
+		printf("Empty FD\n");
+		return -1;
+	}
+	
+	if (oftp->mode == 1 || oftp->mode != 3)
+	{
+		printf("Incompatible mode\n");
+		return -1;
+	}
+	
+	oftp->refCount++;
+
+	printf("BYTES READ: %d, from FD %d\n",(myread(temp_fd,buff,n_bytes)), temp_fd);
+	oftp->refCount--;
+
+}
+
+int write_file()
+{
+	//need fd and a text string
+	char *text = parameter;
+	char buff[BLKSIZE];
+	int temp_fd = atoi(pathname);
+
+	OFT *oftp = running->fd[temp_fd];
+
+	if (temp_fd == 0 || temp_fd == 2)
+	{
+		printf("Incompatible Mode\n");
+		return -1;
+	}
+
+	if (oftp == 0)
+	{
+		printf("Invalid FD\n");
+		return -1;
+	}
+	strncpy(buff, text, strlen(text));
+
+	mywrite(temp_fd, buff, strlen(buff));
+
+}
+/************* LEVEL 2 FUNCTIONS END **********************/
+
+int menu()
+{
+	printf("WELCOME TO TUCKER AND JORDANS 360 PROJECT\n");
+	printf("=========================================\n");
+	printf("Commands:--------------------------------\n");
+	printf("[ls|cd|pwd|mkdir|creat|rmdir|link|unlink|symlink|open|close|quit]\n");
+	printf("-------------------------------------:End\n");
+	printf("=========================================\n");
+	return 0;
+}
+
 main(int argc, char *argv[ ])
 {
 	//Check for the input
@@ -613,6 +838,8 @@ main(int argc, char *argv[ ])
 		else
 			printf("cmd: %s\t pathname: %s\t parameter: %s\n\n", cmd, pathname, parameter);
 
+		if (strcmp(cmd, "menu") == 0)
+			menu();
 		if (strcmp(cmd, "ls")==0)
 			ls();
 		if (strcmp(cmd, "cd")==0)
@@ -633,8 +860,17 @@ main(int argc, char *argv[ ])
 			symlink();
 		if (strcmp(cmd, "readlink") == 0)
 			readlink();
+		if (strcmp(cmd, "open") == 0)
+			open_file();
+		if (strcmp(cmd, "close") == 0)
+			close_file();
+		if (strcmp(cmd, "pfd") == 0)
+			pfd();
+		if (strcmp(cmd, "read") == 0)
+			read_file();
 		if (strcmp(cmd, "") == 0)
 			continue;
+
 
 		strcpy(parameter, "");
 	}

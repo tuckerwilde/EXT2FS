@@ -56,7 +56,7 @@ int nblocks, ninodes, bmap, imap, iblock;
 int blk, offset;
 
 //This is how many things get tokenized?
-int n;
+int n, hold_fd;
 char *name[256][256];
 
 #endif

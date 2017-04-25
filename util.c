@@ -100,15 +100,15 @@ int decFreeBlocks(int dev)
 int balloc(int dev)
 {
   int i;
-  char buf[BLKSIZE];
+  char buff[BLKSIZE];
 
   // read inode_bitmap block
-  get_block(dev, bmap, buf);
+  get_block(dev, bmap, buff);
 
   for (i=0; i < nblocks; i++){
-    if (tst_bit(buf, i)==0){
-      set_bit(buf,i);
-      put_block(dev, bmap, buf);
+    if (tst_bit(buff, i)==0){
+      set_bit(buff,i);
+      put_block(dev, bmap, buff);
       decFreeBlocks(dev);
 
       printf("Block Allocated:%d\n", i+1); 
@@ -193,10 +193,10 @@ int mymkdir(MINODE *pip, char *name)
 	iput(mip);
 
 	//Create the first two entries... God I should remember how to do this.
-	get_block(dev, tip->i_block[0], buff);
+	//get_block(dev, tempBno, buff);
 
 	dp = (DIR *)buff;
-	cp = dp;
+	cp = buff;
 
 	//"."
 	dp->inode = tempIno;
@@ -224,17 +224,25 @@ int mymkdir(MINODE *pip, char *name)
 
 int enter_name(MINODE *pip, int myino, char *myname)
 {
-	char buff[BLKSIZE], buff2[BLKSIZE];
+	char buff[BLKSIZE];
 	char *cp;
+	int i;
+	int checker = 0;
+	int remain, needLen;
+	int nlen = strlen(myname);
+	int needed = 4*((8+nlen+3)/4);
 
-	for (int i = 0; i < 13; i++)
+	for (i = 0; i < 12; i++)
 	{
 		if (pip->INODE.i_block[i] == 0)
+		{
+			printf("WE break\n");
 			break;
+		}
 		get_block(pip->dev, pip->INODE.i_block[i], buff);
 
 		dp = (DIR *)buff;
-		cp = dp;
+		cp = buff;
 
 		while (cp + dp->rec_len < buff + BLKSIZE)
 		{
@@ -243,10 +251,11 @@ int enter_name(MINODE *pip, int myino, char *myname)
 			dp = (DIR *)cp;
 		}
 		//Dp is now at final spot.
-		int needLen = (4*((8+dp->name_len+3)/4));
-		int remain = (dp->rec_len) - needLen;
+		needLen = (4*((8+dp->name_len+3)/4));
+		remain = (dp->rec_len) - needed;
+		printf("\n\n NEEDED LENGTH: %d REMAINING LENGTH%d\n\n", needed, remain);
 
-		if (remain >= needLen)
+		if (remain >= needed)
 		{
 			dp->rec_len = needLen;
 			cp += dp->rec_len;
@@ -257,21 +266,25 @@ int enter_name(MINODE *pip, int myino, char *myname)
 			strcpy(dp->name, myname);
 			//Done. New entry in.
 			put_block(pip->dev, pip->INODE.i_block[i], buff);
+			checker = 1;
 		}
-		else
-		{
-			int bno = balloc(pip->dev);
-			pip->INODE.i_size += BLKSIZE;
-			get_block(pip->dev, bno, buff2);
-			dp = (DIR *)buff2;
-			cp = dp;
-			dp->rec_len = BLKSIZE;
-			dp->name_len = strlen(myname);
-			dp->inode = myino;
-			strcpy(dp->name, myname);
-			put_block(pip->dev, bno, buff2);
-		}
+	}
+	//int bno = balloc(pip->dev);
+	if (checker == 0)
+	{
+		pip->INODE.i_block[i] = balloc(dev);
+		pip->INODE.i_size += BLKSIZE;
+		pip->INODE.i_blocks += 2;
 
+		memset(buff, 0, BLKSIZE);
+		get_block(pip->dev, pip->INODE.i_block[i], buff);
+		dp = (DIR *)buff;
+		cp = buff;
+		dp->rec_len = BLKSIZE;
+		dp->name_len = strlen(myname);
+		dp->inode = myino;
+		strcpy(dp->name, myname);
+		put_block(pip->dev, pip->INODE.i_block[i], buff);
 	}
 }
 
@@ -549,17 +562,23 @@ int myread(int temp_fd, char buff[], int nbytes)
 		oftp->offset += left;
 		//Now to make it like cat...
 		//Should be a string. If it breaks come back to this.
-		printf("%s", cq); 
+		printf("'%s' ", cq); 
 	}
 	return count;
 }
 
 int mywrite(int temp_fd, char buff[], int nbytes)
 {
-	int lbk = 0, startByte = 0;
+	int lbk = 0, startByte = 0, blk, remain, left, count;
 	OFT *oftp;
 
+	char writebuff[BLKSIZE], double_buff[256], indirect_buff[256];
+	char zero[BLKSIZE];
+
+	char *cp;
+	char *cq = buff;
 	oftp = running->fd[temp_fd];
+	memset(zero, 0, BLKSIZE);
 
 	while (nbytes > 0)
 	{
@@ -568,9 +587,70 @@ int mywrite(int temp_fd, char buff[], int nbytes)
 
 		if (lbk < 12)
 		{
-			
+			//Need to allocate some mem for the block.
+			if (oftp->mptr->INODE.i_block[lbk] == 0)
+			{
+				oftp->mptr->INODE.i_block[lbk] = balloc(oftp->mptr->dev);
+				put_block(dev, oftp->mptr->INODE.i_block[lbk], zero);
+
+			}
+			//Assign.
+			blk = oftp->mptr->INODE.i_block[lbk];
 		}
+		else if (lbk >= 12 && lbk < 256 + 12) //Indirect
+		{
+			if (oftp->mptr->INODE.i_block[12] == 0)
+			{
+				//balloc and zero it out.
+				oftp->mptr->INODE.i_block[12] = balloc(oftp->mptr->dev);
+			}
+			get_block(dev, oftp->mptr->INODE.i_block[12], (char *)indirect_buff);
+
+			if (indirect_buff[lbk-12] == 0)
+			{
+				indirect_buff[lbk-12] = balloc(oftp->mptr->dev);
+				put_block(dev, indirect_buff[lbk-12], indirect_buff);
+			}
+			blk = indirect_buff[lbk-12];
+		}
+		else //Double indirect
+		{
+
+		}
+
+		//Finally go to the writing aspect.
+		get_block(oftp->mptr->dev, blk, writebuff);
+		//Advance to where we actually want to start writing to.
+		//Mostly helpful when you're appending.
+		cp = writebuff + startByte;
+		remain = BLKSIZE - startByte;
+
+		/*Mostly the same as my reader*/
+		if (nbytes < remain) //We won't need to go back to outer loop.
+			left = nbytes;
+		else
+			left = BLKSIZE; //We go until end of block, get new block.
+		//REAL QUICK overflow check!
+		if (remain < left) //Essentailly we go over the whole spot..
+			left = remain;
+
+		//Great! Error checking out of the way.
+		//Let's clear a buffer space.
+		memset(cp, 0, BLKSIZE); //All of it.
+		strncpy(cp, cq, left); //Go read comments above. Move stuff.
+
+		//Updates.
+		remain -= left; //Whats left in this block.
+		nbytes -= left; //Whats left for us to read
+		count += left; //How many blocks we've read!
+		oftp->offset += left;
+		//A faster check with offset.
+		if (oftp->offset > oftp->mptr->INODE.i_size)
+			oftp->mptr->INODE.i_size = oftp->offset;
+		put_block(oftp->mptr->dev, blk, writebuff);
 	}
+	oftp->mptr->dirty = 1;
+	return count;
 }
 
 #endif

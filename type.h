@@ -54,6 +54,7 @@ PROC   proc[NPROC], *running;  // PROC; using only proc[0]
 int fd, dev;                               // file descriptor or dev
 int nblocks, ninodes, bmap, imap, iblock;
 int blk, offset;
+int mode;
 
 //This is how many things get tokenized?
 int n, hold_fd;

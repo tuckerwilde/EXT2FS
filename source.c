@@ -32,9 +32,11 @@ This monstrosity was built to do one thing, and one thing only:
 #include "type.h"
 #include "iget_iput_getino.c"  // YOUR iget_iput_getino.c file with
                                // get_block/put_block, tst/set/clr bit functions
+#define KRED  "\x1B[31m"
+#define RESET "\x1B[0m"
 
 char *disk = "mydisk";
-char line[128], cmd[64], pathname[64], parameter[64];
+char line[512], cmd[256], pathname[256], parameter[256];
 char buf[BLKSIZE];              // define buf1[ ], buf2[ ], etc. as you need
 
 //Initializer
@@ -68,6 +70,20 @@ int mount_root()
 	root = iget(dev,2);
 }
 
+int quit()
+{
+	for (int i = 0; i < NMINODE; i++)
+	{
+		//Means it's still in use.
+		if (minode[i].refCount >= 1)
+		{
+			iput(&minode[i]);
+			minode[i].refCount = 1;
+		}
+	}
+	printf("Exit Successful.\n");
+	exit(100);
+}
 
 /************* LEVEL 1 FUNCTIONS START **********************/
 int ls()
@@ -94,8 +110,8 @@ int ls()
 		tempIno = running->cwd->ino;
 		mip = running->cwd;
 	}
-	printf("Name\t Rec_Len Ino\n SIZE");
-	while (mip->INODE.i_block[i])
+	printf("Rec_Len  Ino\t SIZE\t name\n");
+	while (mip->INODE.i_block[i] != 0)
 	{
 		get_block(dev, mip->INODE.i_block[i], buff);
 		cp = buff;
@@ -105,12 +121,18 @@ int ls()
 			tip = iget(dev, dp->inode);
 			strncpy(buff2, dp->name, dp->name_len);
 			buff2[dp->name_len] = 0;
-			printf("%s\t %d\t %d\t %d\n", buff2, dp->rec_len,dp->inode, tip->INODE.i_size);
+			printf("%d\t %d\t %d\t %o\t %s", dp->rec_len ,dp->inode, tip->INODE.i_size,tip->INODE.i_mode ,buff2);
+			if (tip->INODE.i_mode == 0xA000)
+				printf(" =SL=> %s\n", tip->INODE.i_block);
+			else
+				printf("\n");
 			iput(tip);
 			cp += dp->rec_len;
 			dp = (DIR *)cp;
 		}
 		i++;
+		//THIS ALMOST KILLED ME. DONT DO THIS.
+		//put_block(dev, mip->INODE.i_block[i], buff);
 	}
 
 
@@ -120,6 +142,64 @@ int ls()
 		iput(mip);
 	}
 }
+
+
+//These cause some seriously weird errors. Will come back to them after Level 2.
+/*
+int touch()
+{
+	char buff[BLKSIZE];
+	int temp_ino;
+	MINODE *mip;
+
+	if (pathname[0] == '/')
+	{
+		dev = root->dev;
+	}
+	else
+	{
+		//Else. Check where we are at, and assign that device.
+		dev = running->cwd->dev;
+	}
+
+	temp_ino = getino(&dev, pathname);
+	mip = iget(dev, temp_ino);
+
+	mip->INODE.i_atime = time(0L);
+	printf("%s touched\n",pathname);
+
+	iput(mip);
+}
+
+int ch_mod()
+{
+	printf("Do we enter the function\n");
+	int temp_ino;
+	MINODE *mip;
+
+	sscanf(pathname, "%o", &mode);
+
+	if (parameter[0] == '/')
+	{
+		dev = root->dev;
+	}
+	else
+	{
+		//Else. Check where we are at, and assign that device.
+		dev = running->cwd->dev;
+	}
+
+	printf("Dec %d, oct %o\n", mode, mode);
+	temp_ino = getino(&dev, parameter);
+	mip = iget(dev, temp_ino);
+
+	mip->INODE.i_mode = mode;
+
+	iput(mip);
+
+
+}
+*/
 
 int chdir()
 {
@@ -226,8 +306,8 @@ int make_dir()
 
 	//Grab MINODE of parent.
 	//May have to tokenize this.. we will see.
-	printf("dev in make_dir %d\n", dev);
 	int pino = getino(&dev, parent);
+	printf("Parent INO: %d\n", pino);
 	pip = iget(dev, pino);
 
 	//TODO:
@@ -539,7 +619,7 @@ int open_file()
 	MINODE *mip;
 	OFT *oftp = malloc(sizeof(OFT));
 
-	mode = atoi(pathname);
+	mode = atoi(parameter);
 	
 	if (pathname[0] == '/')
 	{
@@ -611,7 +691,7 @@ int open_file()
 	//We made it this far?? Really? That's impressive.
 	//This returns the FD.
 	hold_fd = i;
-	printf("File Descriptor opened: %d\n", i);
+	printf("File Descriptor opened: %d, MODE: %d\n", i, oftp->mode);
 	return i;
 }
 
@@ -697,7 +777,7 @@ int read_file()
 		return -1;
 	}
 	
-	if (oftp->mode == 1 || oftp->mode != 3)
+	if (oftp->mode == 1 || oftp->mode == 3)
 	{
 		printf("Incompatible mode\n");
 		return -1;
@@ -719,7 +799,7 @@ int write_file()
 
 	OFT *oftp = running->fd[temp_fd];
 
-	if (temp_fd == 0 || temp_fd == 2)
+	if (oftp->mode == 0 || oftp->mode == 2)
 	{
 		printf("Incompatible Mode\n");
 		return -1;
@@ -731,7 +811,7 @@ int write_file()
 		return -1;
 	}
 	strncpy(buff, text, strlen(text));
-
+	printf("String to write: '%s', length of string:%d\n", buff, strlen(buff));
 	mywrite(temp_fd, buff, strlen(buff));
 
 }
@@ -801,13 +881,13 @@ main(int argc, char *argv[ ])
 
 	while(1){
 		
-		char inputT[128];
+		char inputT[1024];
 		char *token, *hold;
 		strcpy(pathname, "");
-		printf("input command: [ls|cd|pwd|mkdir|creat|rmdir|link|unlink|symlink|quit] $ ");
+		printf("input command: "KRED"$ "RESET);
 
 		//grab command
-		fgets(inputT, 128, stdin);
+		fgets(inputT, 1024, stdin);
 
 		inputT[strlen(inputT)-1] = 0;
 
@@ -831,7 +911,9 @@ main(int argc, char *argv[ ])
 		hold = strtok(NULL, "");
 		
 		if (hold)
+		{
 			strcpy(parameter, hold);
+		}
 
 		if (strcmp(parameter, "")==0)
 			printf("cmd: %s\t pathname: %s\n\n", cmd, pathname);
@@ -842,6 +924,10 @@ main(int argc, char *argv[ ])
 			menu();
 		if (strcmp(cmd, "ls")==0)
 			ls();
+		/*
+		if (strcmp(cmd, "touch") == 0)
+			touch();
+			*/
 		if (strcmp(cmd, "cd")==0)
 			chdir();
 		if (strcmp(cmd, "pwd")==0)
@@ -868,8 +954,14 @@ main(int argc, char *argv[ ])
 			pfd();
 		if (strcmp(cmd, "read") == 0)
 			read_file();
-		if (strcmp(cmd, "") == 0)
-			continue;
+		/*
+		if (strcmp(cmd, "chmod") == 0)
+			ch_mod();
+			*/
+		if (strcmp(cmd, "write") == 0)
+			write_file();
+		if (strcmp(cmd, "quit") == 0)
+			quit();
 
 
 		strcpy(parameter, "");

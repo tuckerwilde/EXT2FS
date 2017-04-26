@@ -1,22 +1,18 @@
 /*
-                                                 ,  ,
-                                               / \/ \
-                                              (/ //_ \_
-     .-._                                      \||  .  \
-      \  '-._                            _,:__.-"/---\_ \
+												 ,  ,
+											   / \/ \
+											  (/ //_ \_
+	 .-._                                      \||  .  \
+	  \  '-._                            _,:__.-"/---\_ \
  ______/___  '.    .--------------------'~-'--.)__( , )\ \
 `'--.___  _\  /    |             Here        ,'    \)|\ `\|
-     /_.-' _\ \ _:,_          Be Dragons           " ||   (
+	 /_.-' _\ \ _:,_          Be Dragons           " ||   (
    .'__ _.' \'-/,`-~`                                |/
-       '. ___.> /=,|  Abandon hope all ye who enter  |
-        / .-'/_ )  '---------------------------------'
-        )'  ( /(/
-             \\ "
-              '=='
-
-This monstrosity was built to do one thing, and one thing only:
-	
-					Get the fuck out of 360.
+	   '. ___.> /=,|  Abandon hope all ye who enter  |
+		/ .-'/_ )  '---------------------------------'
+		)'  ( /(/
+			 \\ "
+			  '=='
 */
 
 #include <stdio.h>
@@ -31,7 +27,7 @@ This monstrosity was built to do one thing, and one thing only:
 #include "util.c"
 #include "type.h"
 #include "iget_iput_getino.c"  // YOUR iget_iput_getino.c file with
-                               // get_block/put_block, tst/set/clr bit functions
+							   // get_block/put_block, tst/set/clr bit functions
 #define KRED  "\x1B[31m"
 #define RESET "\x1B[0m"
 
@@ -40,6 +36,17 @@ char line[512], cmd[256], pathname[256], parameter[256];
 char buf[BLKSIZE];              // define buf1[ ], buf2[ ], etc. as you need
 
 //Initializer
+/*
+*Function: init
+*--------------
+*Initializes our two running processes, assigning all minodes
+*ref counts to zero, as well as setting pid, uid, and CWD of each
+*process and setting up the FD's for future use.
+*
+*Accepts no input, other than global variables.
+*
+*Outputs nothing other than print.
+*/
 int init()
 {
 	for (int i = 0; i < NMINODE; i++)
@@ -64,6 +71,7 @@ int init()
 	return;
 }
 
+
 int mount_root()
 {
 	printf("Mount Root.\n");
@@ -86,13 +94,26 @@ int quit()
 }
 
 /************* LEVEL 1 FUNCTIONS START **********************/
+/*
+*Function: ls
+*------------
+*Mimics the linux LS call. Logic behind it is simple, and is as follows
+*1. Grab a MINODE mip, assign it to the CWD of the running process
+*2. Quick step: Check if pathname is empty.
+*2.1 If not empty, call getino to search for the dirname of the pathname and set mip to that
+*2.2 If empty, continue with mip set at running cwd
+*3. Assuming direct blocks only, step through each one, like search
+*4. If a block is empty, we've hit the end.
+*
+*Returns no value, only prints out the contents of each block
+*/
 int ls()
 {
 	int tempIno, i = 0;
 	char *cp;
 	int dev = running->cwd->dev;
 	MINODE *mip = running->cwd, *tip;
-	char buff[1024], buff2[1024];
+	char buff[BLKSIZE], buff2[BLKSIZE];
 	
 	if (strcmp(pathname, "") != 0)
 	{
@@ -200,7 +221,18 @@ int ch_mod()
 
 }
 */
-
+/*
+*Function: change directory
+*--------------------------
+*mimics the linux command cd, changes directory to pathname or back to root if !pathname
+*
+*1. Check for absolute or relative, assigning dev.
+*2. Call getino function, which parses out pathname and checks if that dirname exists, if so
+*3. Return the ino, and grab the MINODE associated
+*4. Simply assign our CWD to that minode, with that associated INO
+*
+*Returns nothing, just changes our current working directory in the active process
+*/
 int chdir()
 {
 	int tempIno;
@@ -276,7 +308,14 @@ int pwd()
 }
 
 /*
-	This function creates a new directory
+	Function: Mkdir, mimics the linux command mkdir. Creates a new directory allocating memory.
+	-------------------------------------------------------------------------------------------
+	1. Absolute, relative check, assigning our MINODE as necessary.
+	2. Grab the parent ino after calling dir and base name. Then grab the minode associated with parent.
+	3. Call mymkdir, which calls enter_name, allocating memory and moving information as necessary
+	4. touch time, linkscount, marking dirty, and setting mode. put back our minodes.
+
+	Returns nothing, just creates a directory, allocating space as neccessary.
 */
 int make_dir()
 {
@@ -322,11 +361,18 @@ int make_dir()
 	pip->dirty = 1;
 	pip->INODE.i_mode = 0040000;
 
+
 	iput(pip);
 
 }
 
+/*
+	Function: creat, mimics the creat function in linux. Creates a file.
+	--------------------------------------------------------------------
 
+	1. Extremely similar process to mkdir, only thing changed is the mode.
+	2. And the helper function.
+*/
 int creat_file()
 {
 	MINODE *mip, *pip;
@@ -373,6 +419,17 @@ int creat_file()
 	iput(pip);
 }
 
+/*
+	Function: Remove directory
+	--------------------------
+	1. Grab our minode, mip, using pathname.
+	2. Some safety checks, valid path, directory... blah blah blah.
+	3. Grab the block of the minode, the first, simply to check if it's empty. If '..' is not 1012, its not empty
+	4. Truncate our minode, deallocating all the blocks.
+	5. Deallocate the INODE.
+	6. Go into the parent directory, and deal with that. Further explained at the helper function.
+	7. Touch parents time, and mark dirty.
+*/
 int rmdir()
 {
 	int temp_ino, par_ino;
@@ -473,6 +530,8 @@ int hard_link()
 
 	//Check /x/y exists
 	par_ino = getino(&dev, basen);
+	printf("Dirn:%s\n", dirn);
+	getchar();
 	if (par_ino == 0)
 	{
 		printf("Parent doesn't exist\n");
@@ -793,8 +852,13 @@ int read_file()
 int write_file()
 {
 	//need fd and a text string
-	char *text = parameter;
+	char text[BLKSIZE];
+	memset(text, 0, BLKSIZE);
+	strncpy(text, parameter, strlen(parameter));
+
 	char buff[BLKSIZE];
+	memset(buff, 0, BLKSIZE);
+
 	int temp_fd = atoi(pathname);
 
 	OFT *oftp = running->fd[temp_fd];
@@ -810,9 +874,67 @@ int write_file()
 		printf("Invalid FD\n");
 		return -1;
 	}
+
 	strncpy(buff, text, strlen(text));
+
 	printf("String to write: '%s', length of string:%d\n", buff, strlen(buff));
 	mywrite(temp_fd, buff, strlen(buff));
+
+}
+
+//TODO: Fix this? Doesn't work with my shit.
+int mv_file()
+{
+	//input should be
+	//mv src dest
+	//mv pathname parameter
+	char src[128], dest[128];
+	strcpy(src, pathname);
+	strcpy(dest, parameter);
+	int srcino = getino(&dev, pathname);
+	if(srcino == 0)
+	{
+		printf("Source not found\n");
+		return -1;
+	}
+	//int destino = getino(&dev, dest);
+	
+	hard_link();
+	unlink();
+}
+
+int cp_file()
+{
+	int temp_fd, temp_gd, bytes;
+	char source[BLKSIZE] = {0}, dest[BLKSIZE] = {0}, buff[BLKSIZE];
+
+	strncpy(source, pathname, strlen(pathname));
+	strncpy(dest, parameter, strlen(parameter));
+	printf("source: %s dest: %s\n", source, dest);
+
+	//need to open source for read, 0.
+	strcpy(parameter, "");
+	strcpy(parameter, "1");
+	strncpy(pathname, source, strlen(source));
+	temp_gd = open_file();
+	getchar();
+	//open destination for wr.
+	//TODO: creat first.
+	//assume it's created.
+	strcpy(pathname, "");
+	strncpy(pathname, dest, strlen(dest));
+	strcpy(parameter, "0");
+	temp_gd = open_file();
+
+	//test print
+	pfd();
+
+	while(bytes = myread(temp_gd, buff, BLKSIZE))
+	{
+		printf("%d Count\n", bytes);
+		mywrite(temp_fd, buff, BLKSIZE);
+		memset(buff, 0, BLKSIZE);
+	}
 
 }
 /************* LEVEL 2 FUNCTIONS END **********************/
@@ -960,6 +1082,10 @@ main(int argc, char *argv[ ])
 			*/
 		if (strcmp(cmd, "write") == 0)
 			write_file();
+		if (strcmp(cmd, "mv") == 0)
+			mv_file();
+		if (strcmp(cmd, "cp") == 0)
+			cp_file();
 		if (strcmp(cmd, "quit") == 0)
 			quit();
 

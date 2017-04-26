@@ -508,8 +508,6 @@ int myread(int temp_fd, char buff[], int nbytes)
 	while (nbytes && avail)
 	{
 		lbk = oftp->offset / BLKSIZE;
-		printf("%d\n", lbk);
-
 		startByte = oftp->offset % BLKSIZE;
 
 		if (lbk < 12)
@@ -529,7 +527,7 @@ int myread(int temp_fd, char buff[], int nbytes)
 			get_block(dev, tempbuff2[blkhold], tempbuff);
 			blk = tempbuff[(lbk - (256+12))%256];
 		}
-	
+			
 
 		get_block(oftp->mptr->dev, blk, readbuff);
 
@@ -592,13 +590,13 @@ int mywrite(int temp_fd, char buff[], int nbytes)
 			{
 				oftp->mptr->INODE.i_block[lbk] = balloc(oftp->mptr->dev);
 				put_block(dev, oftp->mptr->INODE.i_block[lbk], zero);
-
 			}
 			//Assign.
 			blk = oftp->mptr->INODE.i_block[lbk];
 		}
 		else if (lbk >= 12 && lbk < 256 + 12) //Indirect
 		{
+			printf("Indirect\n");
 			if (oftp->mptr->INODE.i_block[12] == 0)
 			{
 				//balloc and zero it out.
